@@ -1,0 +1,6 @@
+# Format is [TYPE] [ADDR] [NAME]
+# where [TYPE] : 1 for NXT, 2 for EV3
+#       [ADDR] : aa:bb:cc:dd:ee:ff is the bluetooth address
+#       [NAME] : is the name of the team
+
+1 00:16:53:15:FC:44 NXT

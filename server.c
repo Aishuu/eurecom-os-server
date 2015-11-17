@@ -220,8 +220,9 @@ int main(int argc, char **argv) {
         // print all teams
         for (i=0; i<nbTeams; i++)
             if (teams[i].robotType != RBT_MISS)
-                printf ("%2d: " KGRN "%" STR(MAXNAMESIZE) "s " RESET " (%3s)\n", 
+                printf ("%2d: %s%" STR(MAXNAMESIZE) "s " RESET " (%3s)\n", 
                         i,
+                        COL(i),
                         teams[i].name,
                         teams[i].robotType == RBT_EV3 ? "EV3" : "NXT");
 
@@ -417,7 +418,7 @@ int main(int argc, char **argv) {
             }
         }
 
-        debug (KRED, "End of this game.\n");
+        debug (KRED, "End of this game.\n\n");
         running = 1;
 
         for (i = 0; i < nbTeams; i++) {

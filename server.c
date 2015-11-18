@@ -189,6 +189,16 @@ int main(int argc, char **argv) {
         }
     }
 
+printf ("                                           )  (      (                            \n");
+printf ("                                        ( /(  )\\ )   )\\ )                         \n");
+printf ("       (     (  (     (           )     )\\())(()/(  (()/(   (  (    )     (  (    \n");
+printf ("       )\\   ))\\ )(   ))\\ (  (    (     ((_)\\  /(_))  /(_)) ))\\ )(  /((   ))\\ )(   \n");
+printf ("      ((_) /((_|()\\ /((_))\\ )\\   )\\  '   ((_)(_))   (_))  /((_|()\\(_))\\ /((_|()\\  \n");
+printf ("      | __(_))( ((_|_)) ((_|(_)_((_))   / _ \\/ __|  / __|(_))  ((_))((_|_))  ((_) \n");
+printf ("      | _|| || | '_/ -_) _/ _ \\ '  \\() | (_) \\__ \\  \\__ \\/ -_)| '_\\ V // -_)| '_| \n");
+printf ("      |___|\\_,_|_| \\___\\__\\___/_|_|_|   \\___/|___/  |___/\\___||_|  \\_/ \\___||_|  \n");
+printf ("\n\n");
+
     // create server socket
     serverSock = socket(AF_BLUETOOTH, SOCK_STREAM, BTPROTO_RFCOMM);
 
@@ -218,13 +228,17 @@ int main(int argc, char **argv) {
     while (running) {
 
         // print all teams
+        printf ("|--------------------------------------------|\n");
+        printf ("|" KRED " TEAMS " RESET "                                     |\n");
+        printf ("|--------------------------------------------|\n");
         for (i=0; i<nbTeams; i++)
             if (teams[i].robotType != RBT_MISS)
-                printf ("%2d: %s%" STR(MAXNAMESIZE) "s " RESET " (%3s)\n", 
+                printf ("| %2d: %s%" STR(MAXNAMESIZE) "s " RESET " (%3s) |\n", 
                         i,
                         COL(i),
                         teams[i].name,
                         teams[i].robotType == RBT_EV3 ? "EV3" : "NXT");
+        printf ("|--------------------------------------------|\n");
 
         // prompt for game composition
         printf ("Which teams are going to participate? (^D to end the contest)\n");
@@ -330,6 +344,8 @@ int main(int argc, char **argv) {
 
                 if (!first)
                     printf (KRED " failed to connect.\n" RESET);
+
+                state = GAM_RUNNING;
             }
             
             if (now < startTime) {

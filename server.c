@@ -92,8 +92,10 @@ void write_to_client (struct team *t, const char *buf, size_t size) {
 }
 
 int load_teams_file (const char *filename, struct team *teams, int maxTeams) {
+    printf ("Reading team file...                                                         ");
     FILE * teamsFile = fopen (filename, "r");
     if (teamsFile == NULL) {
+        printf ("[" KRED "KO" RESET "]\n");
         fprintf (stderr, "Could not open file %s.\n", filename);
         exit (EXIT_FAILURE);
     }
@@ -122,6 +124,7 @@ int load_teams_file (const char *filename, struct team *teams, int maxTeams) {
             continue;
 
         if (l < 21) {
+            printf ("[" KRED "KO" RESET "]\n");
             fprintf (stderr, "Error in team file %s (l.%d)\n", filename, j);
             exit (EXIT_FAILURE);
         }
@@ -131,6 +134,7 @@ int load_teams_file (const char *filename, struct team *teams, int maxTeams) {
         else if (buf[0] - '0' == RBT_EV3)
             teams[i].robotType = RBT_EV3;
         else {
+            printf ("[" KRED "KO" RESET "]\n");
             fprintf (stderr, "Error in team file %s (l.%d)\n", filename, j);
             exit (EXIT_FAILURE);
         }
@@ -144,6 +148,8 @@ int load_teams_file (const char *filename, struct team *teams, int maxTeams) {
     }
 
     fclose (teamsFile);
+
+    printf ("[" KGRN "OK" RESET "]\n");
 
     return i;
 }
@@ -159,6 +165,7 @@ void debug (const char *color, const char *fmt, ...) {
     printf ("%s", color);
     vprintf (fmt, argp);
     printf (RESET);
+    fflush (stdout);
 
     va_end (argp);
 }
@@ -189,31 +196,35 @@ int main(int argc, char **argv) {
         }
     }
 
-printf ("                                           )  (      (                            \n");
-printf ("                                        ( /(  )\\ )   )\\ )                         \n");
-printf ("       (     (  (     (           )     )\\())(()/(  (()/(   (  (    )     (  (    \n");
-printf ("       )\\   ))\\ )(   ))\\ (  (    (     ((_)\\  /(_))  /(_)) ))\\ )(  /((   ))\\ )(   \n");
-printf ("      ((_) /((_|()\\ /((_))\\ )\\   )\\  '   ((_)(_))   (_))  /((_|()\\(_))\\ /((_|()\\  \n");
-printf ("      | __(_))( ((_|_)) ((_|(_)_((_))   / _ \\/ __|  / __|(_))  ((_))((_|_))  ((_) \n");
-printf ("      | _|| || | '_/ -_) _/ _ \\ '  \\() | (_) \\__ \\  \\__ \\/ -_)| '_\\ V // -_)| '_| \n");
-printf ("      |___|\\_,_|_| \\___\\__\\___/_|_|_|   \\___/|___/  |___/\\___||_|  \\_/ \\___||_|  \n");
-printf ("\n\n");
+    printf ("\n\n");
+    printf (KRED    "                                           )  (      (                            \n");
+    printf (        "                                        ( /(  )\\ )   )\\ )                         \n");
+    printf (        "       (     (  (     (           )     )\\())(()/(  (()/(   (  (    )     (  (    \n");
+    printf (        "       )\\   ))\\ )(   ))\\ (  (    (     ((_)\\  /(_))  /(_)) ))\\ )(  /((   ))\\ )(   \n");
+    printf (        "      ((_) /((_|()\\ /((_))\\ )\\   )\\  '   ((_)(_))   (_))  /((_|()\\(_))\\ /((_|()\\  \n");
+    printf (RESET   "      | __" KRED "(_))( ((_|_)) ((_|(_)_((_))   " RESET "/ _ \\/ __|  / __|" KRED "(_))  ((_))((_|_))  ((_) \n");
+    printf (RESET   "      | _|| || | '_/ -_) _/ _ \\ '  \\" KRED "() " RESET "| (_) \\__ \\  \\__ \\/ -_)| '_\\ V // -_)| '_| \n");
+    printf (        "      |___|\\_,_|_| \\___\\__\\___/_|_|_|   \\___/|___/  |___/\\___||_|  \\_/ \\___||_|  \n");
+    printf ("\n\n");
 
     // create server socket
+    printf ("Creating server socket...                                                    ");
+    fflush (stdout);
     serverSock = socket(AF_BLUETOOTH, SOCK_STREAM, BTPROTO_RFCOMM);
 
     // bind socket to port 1 of the first available local bluetooth adapter
     loc_addr.rc_family = AF_BLUETOOTH;
     loc_addr.rc_bdaddr = *BDADDR_ANY;
     loc_addr.rc_channel = (uint8_t) 1;
-    bind(serverSock, (struct sockaddr *) &loc_addr, sizeof(loc_addr)); 
+    bind(serverSock, (struct sockaddr *) &loc_addr, sizeof (loc_addr)); 
 
     // put socket into listening mode
     listen(serverSock, MAXTEAM);
+    printf ("[" KGRN "OK" RESET "]\n");
 
     // load teams from file
     int nbTeams = load_teams_file (argv[1], teams, MAXTEAM);
-    debug (KRED, "%d teams loaded...\n", nbTeams);
+    debug (KNRM, "  ... %d teams have been loaded...\n", nbTeams);
 
     // connect to server
     connect(teams[0].sock, (struct sockaddr *)&rem_addr, sizeof(rem_addr));
@@ -228,17 +239,17 @@ printf ("\n\n");
     while (running) {
 
         // print all teams
-        printf ("|--------------------------------------------|\n");
-        printf ("|" KRED " TEAMS " RESET "                                     |\n");
-        printf ("|--------------------------------------------|\n");
+        printf ("   +--------------------------------------------+\n");
+        printf ("   |" KRED " TEAMS " RESET "                                     |\n");
+        printf ("   +--------------------------------------------+\n");
         for (i=0; i<nbTeams; i++)
             if (teams[i].robotType != RBT_MISS)
-                printf ("| %2d: %s%" STR(MAXNAMESIZE) "s " RESET " (%3s) |\n", 
+                printf ("   | %2d: %s%-" STR(MAXNAMESIZE) "s " RESET " (%3s) |\n", 
                         i,
                         COL(i),
                         teams[i].name,
                         teams[i].robotType == RBT_EV3 ? "EV3" : "NXT");
-        printf ("|--------------------------------------------|\n");
+        printf ("   +--------------------------------------------+\n");
 
         // prompt for game composition
         printf ("Which teams are going to participate? (^D to end the contest)\n");
@@ -323,7 +334,7 @@ printf ("\n\n");
             time_t now = time (NULL);
 
             if (now >= startTime && state == GAM_CONNECTING) {
-                printf (KRED "Game starts now !\n" RESET);
+                printf (KRED "Game starts NOW !\n" RESET);
 
                 strcpy (buf, "START");
 
@@ -434,7 +445,7 @@ printf ("\n\n");
             }
         }
 
-        debug (KRED, "End of this game.\n\n");
+        debug (KRED, "\nEnd of this game.\n\n");
         running = 1;
 
         for (i = 0; i < nbTeams; i++) {
@@ -448,7 +459,7 @@ printf ("\n\n");
         }
     }
 
-    debug (KRED, "End of the contest.\n");
+    debug (KRED, "\nEnd of the contest.\n");
 
     if (out)
         fclose (out);

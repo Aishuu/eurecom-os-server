@@ -66,8 +66,8 @@ int read_from_client (int filedes, char *buffer, int maxSize) {
     nbytes = read (filedes, buffer, maxSize-1);
     if (nbytes < 0) {
         /* Read error. */
-        fprintf (stderr, "Failed to read from client %d\n", filedes);
-        exit (EXIT_FAILURE);
+        fprintf (stderr, KRED "Failed to read from client %d\n" RESET, filedes);
+        return -1;
     } else if (nbytes == 0)
         /* End-of-file. */
         return -1;
@@ -415,13 +415,15 @@ int main(int argc, char **argv) {
                             debug (COL(i), "%s", teams[i].name);
                             debug (KRED, " has disconnected.\n");
                         } else {
-                            debug (KNRM, "[");
-                            debug (COL(i), "%s", teams[i].name);
-                            debug (KNRM, "] %s\n", buf);
-                            int j;
-                            for (j = 0; j < nbTeams; ++j)
-                                if (i != j && teams[j].connected)
-                                    write_to_client (&teams[j], buf, nbbytes);
+                            if (state == GAM_RUNNING) {
+                                debug (KNRM, "[");
+                                debug (COL(i), "%s", teams[i].name);
+                                debug (KNRM, "] %s\n", buf);
+                                int j;
+                                for (j = 0; j < nbTeams; ++j)
+                                    if (i != j && teams[j].connected)
+                                        write_to_client (&teams[j], buf, nbbytes);
+                            }
                         }
                     }
 

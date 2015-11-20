@@ -64,14 +64,11 @@ int read_from_client (int filedes, char *buffer, int maxSize) {
     int nbytes;
 
     nbytes = read (filedes, buffer, maxSize-1);
-    if (nbytes < 0) {
-        /* Read error. */
-        fprintf (stderr, KRED "Failed to read from client %d\n" RESET, filedes);
-        return -1;
-    } else if (nbytes == 0)
-        /* End-of-file. */
+    if (nbytes <= 0)
+        // Read error or End-of-file
         return -1;
 
+    buffer[nbytes] = '\0';
     return nbytes;
 }
 
@@ -79,15 +76,19 @@ void write_to_client (struct team *t, const char *buf, size_t size) {
     if (t->robotType == RBT_EV3)
         write (t->sock, buf, size);
     else if (t->robotType == RBT_NXT) {
-        char *bbuf = (char *) malloc ((size+6) * sizeof (char));
-        bbuf[0] = (size+4)>>8;
-        bbuf[1] = (size+4)&0xFF;
-        bbuf[2] = 0x24;
-        bbuf[3] = 0x32;
-        bbuf[4] = 0;
-        bbuf[5] = size;
-        memcpy (bbuf+6, buf, size);
-        write (t->sock, bbuf, size+6);
+        char *bbuf = (char *) malloc ((size+4) * sizeof (char));
+        // bbuf[0] = (size+4)>>8;
+        // bbuf[1] = (size+4)&0xFF;
+        // bbuf[2] = 0x24;
+        // bbuf[3] = 0x32;
+        // bbuf[4] = 0;
+        // bbuf[5] = size;
+        bbuf[0] = 0x80; // no reply telegram
+        bbuf[1] = 0x09; // MessageWrite direct command
+        bbuf[2] = 0;    // 1st mailbox
+        bbuf[3] = size+1;
+        memcpy (bbuf+4, buf, size);
+        write (t->sock, bbuf, size+4);
     }
 }
 
@@ -159,8 +160,11 @@ void debug (const char *color, const char *fmt, ...) {
 
     va_start (argp, fmt);
 
-    if (out != NULL)
+    if (out != NULL) {
         vfprintf (out, fmt, argp);
+        va_end (argp);
+        va_start (argp, fmt);
+    }
 
     printf ("%s", color);
     vprintf (fmt, argp);
@@ -256,6 +260,9 @@ int main(int argc, char **argv) {
 
         char invalidInput;
         do {
+            for (i=0; i<nbTeams; i++)
+                teams[i].active = 0;
+
             invalidInput = 0;
 
             printf ("> ");
@@ -387,6 +394,10 @@ int main(int argc, char **argv) {
                                 debug (KRED, "Team ");
                                 debug (COL(i), "%s", teams[i].name);
                                 debug (KRED, " is now connected.\n");
+                                if (state == GAM_RUNNING) {
+                                    strcpy (buf, "START");
+                                    write_to_client (&teams[i], buf, 5);
+                                }
                             } else {
                                 debug (KRED, "Team ");
                                 debug (COL(i), "%s", teams[i].name);
@@ -427,27 +438,33 @@ int main(int argc, char **argv) {
                         }
                     }
 
-                for (i = 0; i < nbTeams; i++)
-                    if (teams[i].active && !teams[i].connected && teams[i].robotType == RBT_NXT) {
-                        int client = socket(AF_BLUETOOTH, SOCK_STREAM, BTPROTO_RFCOMM);
-                        if (client > 0) {
-                            rem_addr.rc_family = AF_BLUETOOTH;
-                            rem_addr.rc_channel = (uint8_t) 1;
-                            rem_addr.rc_bdaddr = teams[i].address;
+                // for (i = 0; i < nbTeams; i++)
+                //     if (teams[i].active && !teams[i].connected && teams[i].robotType == RBT_NXT) {
+                //         printf ("Trying to connect to %s...\n", teams[i].name);
+                //         int client = socket(AF_BLUETOOTH, SOCK_STREAM, BTPROTO_RFCOMM);
+                //         if (client > 0) {
+                //             rem_addr.rc_family = AF_BLUETOOTH;
+                //             rem_addr.rc_channel = (uint8_t) 1;
+                //             rem_addr.rc_bdaddr = teams[i].address;
 
-                            if (connect(teams[0].sock, (struct sockaddr *)&rem_addr, sizeof(rem_addr)) == 0) {
-                                teams[i].sock = client;
-                                teams[i].connected = 1;
-                                debug (KRED, "Team ");
-                                debug (COL(i), "%s", teams[i].name);
-                                debug (KRED, " is now connected.\n");
-                            }
-                        }
-                    }
+                //             if (connect(teams[0].sock, (struct sockaddr *)&rem_addr, sizeof(rem_addr)) == 0) {
+                //                 teams[i].sock = client;
+                //                 teams[i].connected = 1;
+                //                 debug (KRED, "Team ");
+                //                 debug (COL(i), "%s", teams[i].name);
+                //                 debug (KRED, " is now connected.\n");
+                //             } else {
+                //                 printf ("Failed to connect!\n");
+                //             }
+                //         } else {
+                //             printf ("Failed to create socket!\n");
+                //         }
+                //     }
             }
         }
 
-        debug (KRED, "\nEnd of this game.\n\n");
+        printf ("\n");
+        debug (KRED, "End of this game.\n\n");
         running = 1;
 
         for (i = 0; i < nbTeams; i++) {
@@ -461,7 +478,8 @@ int main(int argc, char **argv) {
         }
     }
 
-    debug (KRED, "\nEnd of the contest.\n");
+    printf ("\n");
+    debug (KRED, "End of the contest.\n");
 
     if (out)
         fclose (out);

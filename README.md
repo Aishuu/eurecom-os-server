@@ -15,11 +15,37 @@ $ hcitool scan
 
 should show the connection.
 
-When the server is up and the game has started you can run the program (rfcomm-client for instance).
+When the server is up and the game has started you can run the program (`client/NXT/client.c` for instance).
 
 ### For NXT
 
-TODO
+In order to connect from a linux laptop to an NXT you will need to follow the steps given in [http://mtc.epfl.ch/courses/ProblemSolving-2007/nxt.html](http://mtc.epfl.ch/courses/ProblemSolving-2007/nxt.html). Note that these steps are getting old and there might be some discrepencies with the behaviour you will observe.
+
+In particular `bluez-utils` has been replaced with the `bluez` package and sdptool has compatibility issues with recent versions of the bluetooth daemon (on Ubuntu in particular). In this case the command
+```
+$ sdptool add --channel=3 SP
+```
+will return -1 with no other error message. This command is used to advertise the Serial Port service to the NXT brick and register it to a specific local channel. Without it the NXT brick will abort the connexion when it sees that no Serial Port service is available (this is the only profile supported by the NXT) and thus a "Line is busy" should be displayed on the brick's screen.
+
+In order for this command to work, the bluetooth daemon should be restarted with the `- C` option. Either by hand:
+```
+$ /etc/init.d/bluetooth stop
+$ bluetoothd -C
+```
+or by modifying /etc/init.d/bluetooth to add the `- C` option (TODO: what exactly to modify?).
+
+Note that in most recent distributions the bluez will be present and enabled by default so you don't need to do steps 1 and 2. However you do need to pair the laptop with the NXT brick before trying to connect:
+* Enable bluetooth on the NXT and make it visible
+* From the bluetooth applet of your desktop manager on your laptop, scan for visible device
+* Try to pair with the NXT
+* A prompt on the brick's screen should enable you to choose a PIN code (1234 by default)
+* Enter the PIN code on the laptop
+
+Then add the Serial Port service to advertised service by running
+```
+$ sdptool add --channel=1 SP
+```
+Note that the server uses channel 1 by default. You can then run the server and connect with the NXT.
 
 ### For the server
 

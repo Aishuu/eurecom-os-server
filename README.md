@@ -8,6 +8,8 @@ It is first intended to be used in the OS course of EURECOM but part or whole of
 
 ### For EV3
 
+Download the kernel image `eurecom-ev3dev.img.xz`. Follow the steps from [http://www.ev3dev.org/docs/getting-started/](http://www.ev3dev.org/docs/getting-started/) with the provided kernel image. Root account was given the password "eurecom".
+
 Turn on the EV3. Unpair the device on the server. Pair again from the server: enter PIN code and reenter it on EV3. Connect by SSH on the EV3. On both the server and the EV3 the command
 ```
 $ hcitool scan

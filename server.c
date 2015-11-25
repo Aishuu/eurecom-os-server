@@ -44,6 +44,15 @@ const char * const playerColors [] = {
 
 #define COL(i) playerColors[i % 5]
 
+#define MAILBOX_SIZE        5
+
+struct NXTMailbox {
+    unsigned int messagesReady;
+    unsigned int nextMessage;
+    char mailbox [MAILBOX_SIZE][MAXMSG+1];
+    unsigned int msgSize [MAILBOX_SIZE];
+};
+
 struct team {
     int sock;
     char name[MAXNAMESIZE+1];
@@ -51,6 +60,7 @@ struct team {
     char robotType;
     char active;
     char connected;
+    struct NXTMailbox *mailbox;
 };
 
 FILE *out = NULL;
@@ -60,13 +70,72 @@ void intHandler (int signo) {
     running = 0;
 }
 
-int read_from_client (int filedes, char *buffer, int maxSize) {
+void replyToNXT (struct team *t, char mailbox) {
+    if (t->robotType != RBT_NXT)
+        return;
+
+    // Note that we only have one mailbox on the server side
+    // and we delete messages every time a MESSAGEREAD command
+    // is received.
+
+    char buf[66] = {0};
+    buf[0] = 64;            // return packages have a fixed size
+    buf[1] = 0x00;          // ...
+    buf[2] = 0x02;          // This is a reply message
+    buf[3] = 0x13;          // to a MESSAGEREAD command
+
+    if (t->mailbox->messagesReady == 0) {
+        // Mailbox is empty
+        buf[4] = 0x40;      // Specified mailbox queue is empty
+        printf ("[DEBUG] Mailbox is empty !\n");
+    } else {
+        // Messages are pending
+        buf[4] = 0x00;      // Everything is OK
+        buf[5] = mailbox;
+        unsigned int msgSize = t->mailbox->msgSize[t->mailbox->nextMessage];
+        if (t->mailbox->mailbox[t->mailbox->nextMessage][msgSize-1] != '\0')
+            // Message must include the terminating null byte
+            msgSize ++;
+
+        buf[6] = (char) (msgSize & 0xFF);
+        memcpy (buf+7, t->mailbox->mailbox[t->mailbox->nextMessage], t->mailbox->msgSize[t->mailbox->nextMessage]);
+
+        printf ("[DEBUG] Serving message '%s'\n", buf+7);
+
+        t->mailbox->nextMessage = (t->mailbox->nextMessage + 1) % MAILBOX_SIZE;
+        t->mailbox->messagesReady --;
+    }
+
+    write (t->sock, buf, 66);
+}
+
+int read_from_client (struct team *t, char *buffer, int maxSize) {
     int nbytes;
 
-    nbytes = read (filedes, buffer, maxSize-1);
+    if (t->robotType == RBT_NXT) {
+        unsigned char nxtBuf[2] = {0};
+        read (t->sock, nxtBuf, 2);
+        unsigned int s = (nxtBuf[1] << 8) | nxtBuf[0];
+        printf ("[DEBUG] : NXT first 2 bytes: %02X %02X (%d)\n", nxtBuf[0], nxtBuf[1], s);
+        maxSize = s+1 < maxSize ? s+1 : maxSize;
+    }
+
+    nbytes = read (t->sock, buffer, maxSize-1);
     if (nbytes <= 0)
         // Read error or End-of-file
         return -1;
+
+    printf ("[DEBUG] received %d bytes : ", nbytes);
+    int i;
+    for (i=0; i<nbytes; i++)
+        printf ("0x%02X ", (unsigned char) buffer[i]);
+    printf ("\n");
+
+    if (t->robotType == RBT_NXT && maxSize >= 6 && buffer[0] == 0x00 && buffer[1] == 0x13) {
+        // Got a MESSAGEREAD command
+        replyToNXT (t, buffer[3]);
+        return 0;
+    }
 
     buffer[nbytes] = '\0';
     return nbytes;
@@ -76,19 +145,27 @@ void write_to_client (struct team *t, const char *buf, size_t size) {
     if (t->robotType == RBT_EV3)
         write (t->sock, buf, size);
     else if (t->robotType == RBT_NXT) {
-        char *bbuf = (char *) malloc ((size+4) * sizeof (char));
+        memcpy (t->mailbox->mailbox[(t->mailbox->messagesReady + t->mailbox->nextMessage) % MAILBOX_SIZE], buf, size);
+        t->mailbox->msgSize[(t->mailbox->messagesReady + t->mailbox->nextMessage) % MAILBOX_SIZE] = size;
+
+        if (t->mailbox->messagesReady == MAILBOX_SIZE)
+            t->mailbox->nextMessage = (t->mailbox->nextMessage + 1) % MAILBOX_SIZE;
+        else
+            t->mailbox->messagesReady ++;
+        
+        // char *bbuf = (char *) malloc ((size+4) * sizeof (char));
         // bbuf[0] = (size+4)>>8;
         // bbuf[1] = (size+4)&0xFF;
         // bbuf[2] = 0x24;
         // bbuf[3] = 0x32;
         // bbuf[4] = 0;
         // bbuf[5] = size;
-        bbuf[0] = 0x80; // no reply telegram
-        bbuf[1] = 0x09; // MessageWrite direct command
-        bbuf[2] = 0;    // 1st mailbox
-        bbuf[3] = size+1;
-        memcpy (bbuf+4, buf, size);
-        write (t->sock, bbuf, size+4);
+        // bbuf[0] = 0x80; // no reply telegram
+        // bbuf[1] = 0x09; // MessageWrite direct command
+        // bbuf[2] = 0;    // 1st mailbox
+        // bbuf[3] = size+1;
+        // memcpy (bbuf+4, buf, size);
+        // write (t->sock, bbuf, size+4);
     }
 }
 
@@ -144,6 +221,14 @@ int load_teams_file (const char *filename, struct team *teams, int maxTeams) {
         str2ba (buf+2, &teams[i].address);
 
         strcpy (teams[i].name, buf+20);
+
+        if (teams[i].robotType == RBT_NXT) {
+            teams[i].mailbox = (struct NXTMailbox *) malloc (sizeof (struct NXTMailbox));
+            teams[i].mailbox->messagesReady = 0;
+            teams[i].mailbox->nextMessage = 0;
+        }
+        else
+            teams[i].mailbox = NULL;
 
         i++;
     }
@@ -419,13 +504,13 @@ int main(int argc, char **argv) {
                     if (teams[i].connected && FD_ISSET (teams[i].sock, &read_fd_set)) {
                         memset(buf, 0, sizeof(buf));
                         int nbbytes;
-                        if ((nbbytes = read_from_client (teams[i].sock, buf, MAXMSG)) < 0) {
+                        if ((nbbytes = read_from_client (&teams[i], buf, MAXMSG)) < 0) {
                             close (teams[i].sock);
                             teams[i].connected = 0;
                             debug (KRED, "Team ");
                             debug (COL(i), "%s", teams[i].name);
                             debug (KRED, " has disconnected.\n");
-                        } else {
+                        } else if (nbbytes != 0) {
                             if (state == GAM_RUNNING) {
                                 debug (KNRM, "[");
                                 debug (COL(i), "%s", teams[i].name);
@@ -480,6 +565,10 @@ int main(int argc, char **argv) {
 
     printf ("\n");
     debug (KRED, "End of the contest.\n");
+
+    for (i=0; i<nbTeams; i++)
+        if (teams[i].robotType == RBT_NXT)
+            free (teams[i].mailbox);
 
     if (out)
         fclose (out);

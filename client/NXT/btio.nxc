@@ -43,7 +43,8 @@ sub BTSendMessage(byte connection, byte mailbox, string msg){ //send a BT messag
 string BTReceiveMessage(byte connection, byte mailbox, byte flush){ //receive a BT message
    string msg;
    BTWait(connection);
-   ReceiveMessage(mailbox,flush,msg);
+   char r = ReceiveMessage(mailbox,flush,msg);
+   NumOut(0, LCD_LINE5, r);
    BTWait(connection);
    return msg;
 }

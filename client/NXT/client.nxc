@@ -40,6 +40,7 @@ task main() {
         TextOut(0, LCD_LINE2, "Msg: " + msg);
         NumOut(0, LCD_LINE3, j);
         msg = msg + BTReceiveMessage (BT_CONN, 0, 1);
+        TextOut(0, LCD_LINE2, "Msg: " + msg);
     }
 
     Wait (5000);

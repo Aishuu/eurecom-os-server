@@ -24,6 +24,14 @@
 #define GAM_CONNECTING      0
 #define GAM_RUNNING         1
 
+#define MSG_ACTION          0
+#define MSG_ACK             1
+#define MSG_LEAD            2
+#define MSG_START           3
+#define MSG_STOP            4
+#define MSG_WAIT            5
+#define MSG_CUSTOM          6
+
 #define KNRM  "\x1B[0m"
 #define KRED  "\x1B[31m"
 #define KGRN  "\x1B[32m"
@@ -60,6 +68,7 @@ struct team {
     char robotType;
     char active;
     char connected;
+    unsigned char rank;
     struct NXTMailbox *mailbox;
 };
 
@@ -152,20 +161,6 @@ void write_to_client (struct team *t, const char *buf, size_t size) {
             t->mailbox->nextMessage = (t->mailbox->nextMessage + 1) % MAILBOX_SIZE;
         else
             t->mailbox->messagesReady ++;
-        
-        // char *bbuf = (char *) malloc ((size+4) * sizeof (char));
-        // bbuf[0] = (size+4)>>8;
-        // bbuf[1] = (size+4)&0xFF;
-        // bbuf[2] = 0x24;
-        // bbuf[3] = 0x32;
-        // bbuf[4] = 0;
-        // bbuf[5] = size;
-        // bbuf[0] = 0x80; // no reply telegram
-        // bbuf[1] = 0x09; // MessageWrite direct command
-        // bbuf[2] = 0;    // 1st mailbox
-        // bbuf[3] = size+1;
-        // memcpy (bbuf+4, buf, size);
-        // write (t->sock, bbuf, size+4);
     }
 }
 
@@ -259,7 +254,158 @@ void debug (const char *color, const char *fmt, ...) {
     va_end (argp);
 }
 
-int main(int argc, char **argv) {
+void parseMessage (struct team *teams, int nbTeams, int sendingTeam, const unsigned char *buf, int nbbytes) {
+    debug (KNRM, "[");
+    debug (COL(sendingTeam), "%s", teams[sendingTeam].name);
+    debug (KNRM, "] ");
+
+    if (nbbytes < 5) {
+        debug (KRED, "*** header is too short (%d bytes) ***\n", nbbytes);
+        return;
+    }
+
+    if (buf[2] != sendingTeam) {
+        debug (KRED, "*** mediocre spoofing attempt detected ***\n");
+        return;
+    }
+
+    if (buf[3] >= nbTeams || !teams[buf[3]].active) {
+        debug (KRED, "*** unkown or inactive receiver (%d) ***\n", buf[3]);
+        return;
+    }
+
+    if (!teams[buf[3]].connected) {
+        debug (KRED, "*** Team ");
+        debug (COL(buf[3]), "%s", teams[buf[3]].name);
+        debug (KRED, " is not connected. Message discarded ***\n");
+        return;
+    }
+
+    uint16_t id = *((uint16_t *) buf);
+
+    switch (buf[4]) {
+        case MSG_ACTION:
+            // ACTION
+            if (nbbytes < 10) {
+                debug (KRED, "*** ACTION message is too short (%d bytes) ***\n", nbbytes);
+                return;
+            }
+
+            if (teams[buf[3]].rank != teams[sendingTeam].rank+1) {
+                debug (KRED, "*** Can't send ACTION message to team ");
+                debug (COL(buf[3]), "%s", teams[buf[3]].name);
+                debug (KRED, " ***\n");
+                return;
+            }
+
+            uint16_t angle = *((uint16_t *) &buf[5]);
+            uint16_t speed = *((uint16_t *) &buf[8]);
+
+            debug (KNRM, "id=%d dest=", id);
+            debug (COL(buf[3]), "%s\n", teams[buf[3]].name);
+            debug (KNRM, "    ACTION   angle=%d dist=%d speed=%d\n", angle, buf[7], speed);
+
+            write_to_client (&teams[buf[3]], (char *) buf, 10);
+
+            break;
+        case MSG_ACK:
+            // ACK
+            if (nbbytes < 8) {
+                debug (KRED, "*** ACK message is too short (%d bytes) ***\n", nbbytes);
+                return;
+            }
+
+            if (teams[buf[3]].rank != teams[sendingTeam].rank+1 && teams[buf[3]].rank != teams[sendingTeam].rank-1) {
+                debug (KRED, "*** Can't send ACK message to team ");
+                debug (COL(buf[3]), "%s", teams[buf[3]].name);
+                debug (KRED, " ***\n");
+                return;
+            }
+
+            uint16_t idAck = *((uint16_t *) &buf[5]);
+
+            debug (KNRM, "id=%d dest=", id);
+            debug (COL(buf[3]), "%s\n", teams[buf[3]].name);
+            debug (KNRM, "    ACK      idAck=%d status=%d\n", idAck, buf[7]);
+
+            write_to_client (&teams[buf[3]], (char *) buf, 8);
+
+            break;
+        case MSG_LEAD:
+            // LEAD
+            if (teams[buf[3]].rank != teams[sendingTeam].rank+1) {
+                debug (KRED, "*** Can't send LEAD message to team ");
+                debug (COL(buf[3]), "%s", teams[buf[3]].name);
+                debug (KRED, " ***\n");
+                return;
+            }
+
+            debug (KNRM, "id=%d dest=", id);
+            debug (COL(buf[3]), "%s\n", teams[buf[3]].name);
+            debug (KNRM, "    LEAD\n");
+
+            write_to_client (&teams[buf[3]], (char *) buf, 5);
+
+            break;
+        case MSG_START:
+            // START
+            debug (KRED, "*** Tried to START the game ***\n");
+            return;
+        case MSG_STOP:
+            // STOP
+            debug (KRED, "*** Tried to STOP the game ***\n");
+            return;
+        case MSG_WAIT:
+            // WAIT
+            if (nbbytes < 6) {
+                debug (KRED, "*** WAIT message is too short (%d bytes) ***\n", nbbytes);
+                return;
+            }
+
+            if (teams[buf[3]].rank != teams[sendingTeam].rank-1) {
+                debug (KRED, "*** Can't send WAIT message to team ");
+                debug (COL(buf[3]), "%s", teams[buf[3]].name);
+                debug (KRED, " ***\n");
+                return;
+            }
+
+            debug (KNRM, "id=%d dest=", id);
+            debug (COL(buf[3]), "%s\n", teams[buf[3]].name);
+            debug (KNRM, "    WAIT     seconds=%d\n", buf[5]);
+
+            write_to_client (&teams[buf[3]], (char *) buf, 6);
+
+            break;
+        case MSG_CUSTOM:
+            // CUSTOM
+            if (teams[buf[3]].rank != teams[sendingTeam].rank+1 && teams[buf[3]].rank != teams[sendingTeam].rank-1) {
+                debug (KRED, "*** Can't send CUSTOM message to team ");
+                debug (COL(buf[3]), "%s", teams[buf[3]].name);
+                debug (KRED, " ***\n");
+                return;
+            }
+
+            debug (KNRM, "id=%d dest=", id);
+            debug (COL(buf[3]), "%s\n", teams[buf[3]].name);
+            debug (KNRM, "    CUSTOM   content=");
+            int i;
+            for (i=5; i<nbbytes; i++) {
+                debug (KNRM, "%02X", buf[i]);
+                if ((i-5) % 4 == 3)
+                    debug (KNRM, " ");
+            }
+            debug (KNRM, "\n");
+
+            write_to_client (&teams[buf[3]], (char *) buf, nbbytes);
+
+            break;
+        default:
+            debug (KRED, "*** unkown message type 0x%02X ***\n", buf[4]);
+            return;
+    }
+}
+
+int main (int argc, char **argv) {
 
     struct sockaddr_rc loc_addr = { 0 }, rem_addr = { 0 };
     int serverSock, fdmax, i;
@@ -284,6 +430,8 @@ int main(int argc, char **argv) {
             exit (EXIT_FAILURE);
         }
     }
+
+    srand(time(NULL));
 
     printf ("\n\n");
     printf (KRED    "                                           )  (      (                            \n");
@@ -344,9 +492,13 @@ int main(int argc, char **argv) {
         printf ("Which teams are going to participate? (^D to end the contest)\n");
 
         char invalidInput;
+        int rankCmp;
+
         do {
-            for (i=0; i<nbTeams; i++)
+            for (i=0; i<nbTeams; i++) {
                 teams[i].active = 0;
+                teams[i].rank = 0;
+            }
 
             invalidInput = 0;
 
@@ -357,13 +509,15 @@ int main(int argc, char **argv) {
             if (p == NULL)
                 running = 0;
             else {
+                rankCmp = 0;
                 // get participating teams
                 for (i=-1; *p && *p != '\n'; p++) {
                     if (*p == ' ') {
                         if (i != -1) {
-                            if (i < nbTeams && teams[i].robotType != RBT_MISS && !teams[i].active)
+                            if (i < nbTeams && teams[i].robotType != RBT_MISS && !teams[i].active) {
                                 teams[i].active = 1;
-                            else {
+                                teams[i].rank = rankCmp++;
+                            } else {
                                 invalidInput = 1;
                                 printf ("Invalid team number: %d\n", i);
                             }
@@ -384,9 +538,10 @@ int main(int argc, char **argv) {
                 }
 
                 if (i != -1) {
-                    if (i < nbTeams && teams[i].robotType != RBT_MISS && !teams[i].active)
+                    if (i < nbTeams && teams[i].robotType != RBT_MISS && !teams[i].active) {
                         teams[i].active = 1;
-                    else {
+                        teams[i].rank = rankCmp++;
+                    } else {
                         invalidInput = 1;
                         printf ("Invalid team number: %d\n", i);
                     }
@@ -395,13 +550,77 @@ int main(int argc, char **argv) {
         } while (invalidInput);
 
         if (running) {
-            debug (KRED, "Starting game with teams ");
-            for (i=0; i<nbTeams; i++)
-                if (teams[i].active) {
-                    if (i != 0)
-                        debug (KRED, ", ");
-                    debug (COL(i), "%s", teams[i].name);
+            int rep = 0;
+            while (rep != '0') {
+                printf ("Rank is:\n");
+                int j;
+                for (i=0; i<rankCmp; i++)
+                    for (j=0; j<nbTeams; j++)
+                        if (teams[j].active && teams[j].rank == i) {
+                            printf ("%d: %s%s" RESET "\n", i, COL(j), teams[j].name);
+                            break;
+                        }
+                printf ("What do you want to do?   (default: 0)\n");
+                printf ("      0: keep that\n");
+                printf ("      1: randomize all\n");
+                printf ("      2: randomize all but leader\n");
+                printf ("> ");
+                fflush (stdout);
+                char *p = fgets (buf, 2, stdin);
+                if (p == NULL || buf[0] == '\n')
+                    break;
+                if (p[0] < '0' || p[0] > '2')
+                    continue;
+
+                rep = p[0];
+
+                if (rep == '1') {
+                    for (i=0; i<nbTeams; i++)
+                        if (teams[i].active) {
+                            char found;
+                            unsigned char rnd;
+                            do {
+                                rnd = (unsigned char) (rand () % rankCmp);
+                                found = 0;
+                                for (j=0; j<i; j++)
+                                    if (teams[j].active && teams[j].rank == rnd) {
+                                        found = 1;
+                                        break;
+                                    }
+                            } while (found);
+
+                            teams[i].rank = rnd;
+                        }
+                } else if (rep == '2') {
+                    for (i=0; i<nbTeams; i++)
+                        if (teams[i].active && teams[i].rank != 0) {
+                            char found;
+                            unsigned char rnd;
+                            do {
+                                rnd = (unsigned char) (rand () % (rankCmp-1)) + 1;
+                                found = 0;
+                                for (j=0; j<i; j++)
+                                    if (teams[j].active && teams[j].rank == rnd) {
+                                        found = 1;
+                                        break;
+                                    }
+                            } while (found);
+
+                            teams[i].rank = rnd;
+                        }
                 }
+            }
+
+            debug (KRED, "Starting game with teams ");
+            int j;
+            for (i=0; i<rankCmp; i++)
+                for (j=0; j<nbTeams; j++)
+                    if (teams[j].active && teams[j].rank == i) {
+                        if (i != 0)
+                            debug (KRED, ", ");
+                        debug (COL(j), "%s", teams[j].name);
+                        break;
+                    }
             debug (KRED, ".\n");
         } else
             break;
@@ -510,41 +729,9 @@ int main(int argc, char **argv) {
                             debug (KRED, "Team ");
                             debug (COL(i), "%s", teams[i].name);
                             debug (KRED, " has disconnected.\n");
-                        } else if (nbbytes != 0) {
-                            if (state == GAM_RUNNING) {
-                                debug (KNRM, "[");
-                                debug (COL(i), "%s", teams[i].name);
-                                debug (KNRM, "] %s\n", buf);
-                                int j;
-                                for (j = 0; j < nbTeams; ++j)
-                                    if (i != j && teams[j].connected)
-                                        write_to_client (&teams[j], buf, nbbytes);
-                            }
-                        }
+                        } else if (nbbytes != 0 && state == GAM_RUNNING)
+                            parseMessage (teams, nbTeams, i, (unsigned char *) buf, nbbytes);
                     }
-
-                // for (i = 0; i < nbTeams; i++)
-                //     if (teams[i].active && !teams[i].connected && teams[i].robotType == RBT_NXT) {
-                //         printf ("Trying to connect to %s...\n", teams[i].name);
-                //         int client = socket(AF_BLUETOOTH, SOCK_STREAM, BTPROTO_RFCOMM);
-                //         if (client > 0) {
-                //             rem_addr.rc_family = AF_BLUETOOTH;
-                //             rem_addr.rc_channel = (uint8_t) 1;
-                //             rem_addr.rc_bdaddr = teams[i].address;
-
-                //             if (connect(teams[0].sock, (struct sockaddr *)&rem_addr, sizeof(rem_addr)) == 0) {
-                //                 teams[i].sock = client;
-                //                 teams[i].connected = 1;
-                //                 debug (KRED, "Team ");
-                //                 debug (COL(i), "%s", teams[i].name);
-                //                 debug (KRED, " is now connected.\n");
-                //             } else {
-                //                 printf ("Failed to connect!\n");
-                //             }
-                //         } else {
-                //             printf ("Failed to create socket!\n");
-                //         }
-                //     }
             }
         }
 

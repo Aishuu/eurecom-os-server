@@ -29,7 +29,7 @@ $ sdptool add --channel=3 SP
 ```
 will return -1 with no other error message. This command is used to advertise the Serial Port service to the NXT brick and register it to a specific local channel. Without it the NXT brick will abort the connexion when it sees that no Serial Port service is available (this is the only profile supported by the NXT) and thus a "Line is busy" should be displayed on the brick's screen.
 
-In order for this command to work, the bluetooth daemon should be restarted with the `- C` option. Either by hand:
+In order for this command to work, the bluetooth daemon should be restarted with the `-C` option. Either by hand:
 ```
 $ /etc/init.d/bluetooth stop
 $ bluetoothd -C

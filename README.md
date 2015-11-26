@@ -36,7 +36,7 @@ In order for this command to work, the bluetooth daemon should be restarted with
 $ /etc/init.d/bluetooth stop
 $ bluetoothd -C
 ```
-or by modifying /etc/init.d/bluetooth to add the `- C` option (TODO: what exactly to modify?).
+or by modifying /etc/init.d/bluetooth to add the `-C` option (TODO: what exactly to modify?).
 
 Note that in most recent distributions the bluez will be present and enabled by default so you don't need to do steps 1 and 2. However you do need to pair the laptop with the NXT brick before trying to connect:
 * Enable bluetooth on the NXT and make it visible
@@ -49,7 +49,10 @@ Then add the Serial Port service to advertised service by running
 ```
 $ sdptool add --channel=1 SP
 ```
-Note that the server uses channel 1 by default. You can then run the server and connect with the NXT.
+Note that the server uses channel 1 by default. You can then run the server, launch a game and connect the NXT to the server by
+navigating in the bluetooth menu. You may see an error message "Line is busy" when you try to connect but it should disappear if
+you insist a bit. Then run your client program (as provided as example).
+
 
 ### For the server
 

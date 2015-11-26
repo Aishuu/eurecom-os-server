@@ -42,6 +42,8 @@
 #define KWHT  "\x1B[37m"
 #define RESET "\033[0m"
 
+#undef DEBUG
+
 const char * const playerColors [] = {
     KGRN,
     KYEL,
@@ -96,7 +98,9 @@ void replyToNXT (struct team *t, char mailbox) {
     if (t->mailbox->messagesReady == 0) {
         // Mailbox is empty
         buf[4] = 0x40;      // Specified mailbox queue is empty
+#ifdef DEBUG
         printf ("[DEBUG] Mailbox is empty !\n");
+#endif
     } else {
         // Messages are pending
         buf[4] = 0x00;      // Everything is OK
@@ -109,7 +113,16 @@ void replyToNXT (struct team *t, char mailbox) {
         buf[6] = (char) (msgSize & 0xFF);
         memcpy (buf+7, t->mailbox->mailbox[t->mailbox->nextMessage], t->mailbox->msgSize[t->mailbox->nextMessage]);
 
-        printf ("[DEBUG] Serving message '%s'\n", buf+7);
+#ifdef DEBUG
+        printf ("[DEBUG] Serving message of size %d '", t->mailbox->msgSize[t->mailbox->nextMessage]);
+        int i;
+        for (i=7; i<7+t->mailbox->msgSize[t->mailbox->nextMessage]; i++) {
+            printf ("%02X", (unsigned char) buf[i]);
+            if ((i-7) % 4 == 3)
+                printf (" ");
+        }
+        printf ("' to team %s [%d]\n", t->name, t->mailbox->nextMessage);
+#endif
 
         t->mailbox->nextMessage = (t->mailbox->nextMessage + 1) % MAILBOX_SIZE;
         t->mailbox->messagesReady --;
@@ -125,7 +138,9 @@ int read_from_client (struct team *t, char *buffer, int maxSize) {
         unsigned char nxtBuf[2] = {0};
         read (t->sock, nxtBuf, 2);
         unsigned int s = (nxtBuf[1] << 8) | nxtBuf[0];
+#ifdef DEBUG
         printf ("[DEBUG] : NXT first 2 bytes: %02X %02X (%d)\n", nxtBuf[0], nxtBuf[1], s);
+#endif
         maxSize = s+1 < maxSize ? s+1 : maxSize;
     }
 
@@ -134,11 +149,19 @@ int read_from_client (struct team *t, char *buffer, int maxSize) {
         // Read error or End-of-file
         return -1;
 
+    if (t->robotType == RBT_NXT)
+        // Delete last '\0'
+        nbytes --;
+
+
+#ifdef DEBUG
     printf ("[DEBUG] received %d bytes : ", nbytes);
     int i;
     for (i=0; i<nbytes; i++)
         printf ("0x%02X ", (unsigned char) buffer[i]);
     printf ("\n");
+#endif
+
 
     if (t->robotType == RBT_NXT && maxSize >= 6 && buffer[0] == 0x00 && buffer[1] == 0x13) {
         // Got a MESSAGEREAD command
@@ -154,8 +177,13 @@ void write_to_client (struct team *t, const char *buf, size_t size) {
     if (t->robotType == RBT_EV3)
         write (t->sock, buf, size);
     else if (t->robotType == RBT_NXT) {
-        memcpy (t->mailbox->mailbox[(t->mailbox->messagesReady + t->mailbox->nextMessage) % MAILBOX_SIZE], buf, size);
-        t->mailbox->msgSize[(t->mailbox->messagesReady + t->mailbox->nextMessage) % MAILBOX_SIZE] = size;
+        int msgInd = (t->mailbox->messagesReady + t->mailbox->nextMessage) % MAILBOX_SIZE;
+        memcpy (t->mailbox->mailbox[msgInd], buf, size);
+        t->mailbox->msgSize[msgInd] = size;
+
+#ifdef DEBUG
+        printf ("[DEBUG] Adding message of size %ld to mailbox of team %s [%d]\n", size, t->name, msgInd);
+#endif
 
         if (t->mailbox->messagesReady == MAILBOX_SIZE)
             t->mailbox->nextMessage = (t->mailbox->nextMessage + 1) % MAILBOX_SIZE;
@@ -217,11 +245,8 @@ int load_teams_file (const char *filename, struct team *teams, int maxTeams) {
 
         strcpy (teams[i].name, buf+20);
 
-        if (teams[i].robotType == RBT_NXT) {
+        if (teams[i].robotType == RBT_NXT)
             teams[i].mailbox = (struct NXTMailbox *) malloc (sizeof (struct NXTMailbox));
-            teams[i].mailbox->messagesReady = 0;
-            teams[i].mailbox->nextMessage = 0;
-        }
         else
             teams[i].mailbox = NULL;
 
@@ -390,7 +415,7 @@ void parseMessage (struct team *teams, int nbTeams, int sendingTeam, const unsig
             debug (KNRM, "    CUSTOM   content=");
             int i;
             for (i=5; i<nbbytes; i++) {
-                debug (KNRM, "%02X", buf[i]);
+                debug (KNRM, "%02X", (unsigned char) buf[i]);
                 if ((i-5) % 4 == 3)
                     debug (KNRM, " ");
             }
@@ -400,7 +425,7 @@ void parseMessage (struct team *teams, int nbTeams, int sendingTeam, const unsig
 
             break;
         default:
-            debug (KRED, "*** unkown message type 0x%02X ***\n", buf[4]);
+            debug (KRED, "*** unkown message type 0x%02X ***\n", (unsigned char) buf[4]);
             return;
     }
 }
@@ -498,6 +523,10 @@ int main (int argc, char **argv) {
             for (i=0; i<nbTeams; i++) {
                 teams[i].active = 0;
                 teams[i].rank = 0;
+                if (teams[i].robotType == RBT_NXT) {
+                    teams[i].mailbox->messagesReady = 0;
+                    teams[i].mailbox->nextMessage = 0;
+                }
             }
 
             invalidInput = 0;
@@ -546,6 +575,9 @@ int main (int argc, char **argv) {
                         printf ("Invalid team number: %d\n", i);
                     }
                 }
+
+                if (rankCmp == 0)
+                    invalidInput = 1;
             }
         } while (invalidInput);
 
@@ -647,13 +679,30 @@ int main (int argc, char **argv) {
             if (now >= startTime && state == GAM_CONNECTING) {
                 printf (KRED "Game starts NOW !\n" RESET);
 
-                strcpy (buf, "START");
+                buf[0] = 0x00;                      // ID of start message
+                buf[1] = 0x00;                      // is 0000
+                buf[2] = 0xFF;                      // server ID is 0xFF
+                buf[4] = MSG_START;                 // This is a START message
+                buf[6] = (char) (0xFF & rankCmp);   // length of the snake
 
                 char first = 1;
                 for (i=0; i<nbTeams; i++) {
                     if (teams[i].active) {
                         if (teams[i].connected) {
-                            write_to_client (&teams[i], buf, 5);
+                            buf[3] = (char) (0xFF & i);             // receiver
+                            buf[5] = teams[i].rank;                 // rank
+                            buf[7] = 0xFF;
+                            buf[8] = 0xFF;
+                            int j;
+                            for (j=0; j<nbTeams; j++)
+                                if (teams[j].active) {
+                                    if (teams[j].rank == teams[i].rank - 1)
+                                        buf[7] = (char) (0xFF & j); // previous
+                                    if (teams[j].rank == teams[i].rank + 1)
+                                        buf[8] = (char) (0xFF & j); // next
+                                }
+
+                            write_to_client (&teams[i], buf, 9);
                         } else {
                             if (first)
                                 first = 0;
@@ -699,8 +748,24 @@ int main (int argc, char **argv) {
                                 debug (COL(i), "%s", teams[i].name);
                                 debug (KRED, " is now connected.\n");
                                 if (state == GAM_RUNNING) {
-                                    strcpy (buf, "START");
-                                    write_to_client (&teams[i], buf, 5);
+                                    buf[0] = 0x00;                          // ID of start message
+                                    buf[1] = 0x00;                          // is 0000
+                                    buf[2] = 0xFF;                          // server ID is 0xFF
+                                    buf[3] = (char) (0xFF & i);             // receiver
+                                    buf[4] = MSG_START;                     // This is a START message
+                                    buf[5] = teams[i].rank;                 // rank
+                                    buf[6] = (char) (0xFF & rankCmp);       // length of the snake
+                                    buf[7] = 0xFF;
+                                    buf[8] = 0xFF;
+                                    int j;
+                                    for (j=0; j<nbTeams; j++)
+                                        if (teams[j].active) {
+                                            if (teams[j].rank == teams[i].rank - 1)
+                                                buf[7] = (char) (0xFF & j); // previous
+                                            if (teams[j].rank == teams[i].rank + 1)
+                                                buf[8] = (char) (0xFF & j); // next
+                                        }
+                                    write_to_client (&teams[i], buf, 9);
                                 }
                             } else {
                                 debug (KRED, "Team ");
@@ -739,10 +804,19 @@ int main (int argc, char **argv) {
         debug (KRED, "End of this game.\n\n");
         running = 1;
 
+        buf[0] = 0x01;                      // ID of stop message
+        buf[1] = 0x00;                      // is 0001
+        buf[2] = 0xFF;                      // server ID is 0xFF
+        buf[4] = MSG_STOP;                  // This is a STOP message
+
+
         for (i = 0; i < nbTeams; i++) {
             if (teams[i].connected) {
-                teams[i].connected = 0;
+                buf[3] = (char) (0xFF & i);             // receiver
+                write_to_client (&teams[i], buf, 5);
+
                 close (teams[i].sock);
+                teams[i].connected = 0;
             }
 
             if (teams[i].active)

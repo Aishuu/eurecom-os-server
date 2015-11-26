@@ -1,63 +1,95 @@
-#include "btio.nxc"
-
 #define CONNECTION  1
-#define BT_CONN     1
 #define SERV_NAME   "aishuu-laptop"
 
-task main() {
-    CommBTConnectionType args;
-    args.Name = SERV_NAME;              // whatever the slave NXT's name is
-    args.ConnectionSlot = CONNECTION;   // this is the desired connection slot (the above code uses 1)
-    args.Action = TRUE;                 // could use some #define with a non-zero value to connect.  0 == disconnect
+#define MSG_ACTION  0
+#define MSG_ACK     1
+#define MSG_LEAD    2
+#define MSG_START   3
+#define MSG_STOP    4
+#define MSG_WAIT    5
+#define MSG_CUSTOM  6
 
-    if (BluetoothStatus(CONNECTION) != NO_ERR) {
-        SysCommBTConnection(args);      // try to connect.
-        TextOut(0, LCD_LINE1, "Conn Trying...");
+char getMessage (byte &msg[]) {
+    until (BluetoothStatus(CONNECTION) == NO_ERR);  // Wait for connection
+    string __msg;
+    char r = ReceiveMessage(0,1,__msg);
+    if (r != 0)
+        return 0;
 
-        // Wait until operation has completed
-        while (args.Result == LDR_INPROGRESS) {
-            NumOut(0, LCD_LINE2, args.Result);
-            Wait (100);
-        }
+    ArrayInit(msg,0,59);
+    StrToByteArray (__msg, msg);
+    r = ArrayLen(msg);
+    if (r < 5)
+        return 0;
 
-        if (args.Result == LDR_SUCCESS) {
-            // we are connected
-            TextOut(0, LCD_LINE1, "Conn Success! ");
-            TextOut(0, LCD_LINE2, "   ");
+    return r;
+}
 
-            // Wait some time if server connection is manual
-            Wait (10000);
-        } else {
-            TextOut(0, LCD_LINE1, "Conn Failed   ");
-            NumOut(0, LCD_LINE2, args.Result);
-        }
-    }
-
-    // Wait for START message
-    TextOut(0, LCD_LINE2, "Waiting Msg...");
-    string msg = BTReceiveMessage (BT_CONN, 0, 1);
-    for (int j=0; StrLen(msg) < 5; j++) {
-        TextOut(0, LCD_LINE2, "Msg: " + msg);
-        NumOut(0, LCD_LINE3, j);
-        msg = msg + BTReceiveMessage (BT_CONN, 0, 1);
-        TextOut(0, LCD_LINE2, "Msg: " + msg);
-    }
-
-    Wait (5000);
-
+void sendMessage (byte msg[]) {
     CommBTWriteType args2;
-    args2.Connection = 1;
-    args2.Buffer= "Hello from NXT";
+    args2.Connection = CONNECTION;
+    args2.Buffer= ByteArrayToStr (msg);
 
     SysCommBTWrite(args2);
-    TextOut(0, LCD_LINE2, "Trying to write");
+    TextOut(0, LCD_LINE2,       "Trying to write");
     while (BluetoothStatus (CONNECTION) == STAT_COMM_PENDING)
         Wait (10);
 
     if (BluetoothStatus (CONNECTION) == NO_ERR)
-        TextOut(0, LCD_LINE2, "Write Done        ");
+        TextOut(0, LCD_LINE2,   "Write Done     ");
     else
-        TextOut(0, LCD_LINE2, "Write Failed      ");
+        TextOut(0, LCD_LINE2,   "Write Failed   ");
+}
+
+task main() {
+
+    if (BluetoothStatus(CONNECTION) != NO_ERR)
+        StopAllTasks ();
+    else
+        TextOut(0, LCD_LINE1, "Conn Success!  ");
+
+    // Wait for START message
+    TextOut(0, LCD_LINE2,       "Waiting Msg...");
+    byte msg[];
+    until (getMessage (msg))
+        Wait (100);
+
+    NumOut(0, LCD_LINE3, msg[4]);
+    byte previous = 0;
+    byte next = 0;
+    byte rank = 0;
+    byte length = 0;
+
+    if (msg[4] == MSG_START) {
+        TextOut(0, LCD_LINE2,   "START !!!     ");
+        rank = msg[5];
+        length = msg[6];
+        previous = msg[7];
+        next = msg[8];
+    }
+
+    Wait (5000);
+
+    if (rank != length-1) {
+        // we are not the last robot
+        byte actionMsg[];
+        ArrayInit(actionMsg,0,10);
+        actionMsg[0] = 0x00;
+        actionMsg[1] = 0x00;
+        actionMsg[2] = 0x00;        // ID of the team
+        actionMsg[3] = next;
+        actionMsg[4] = MSG_ACTION;
+
+        actionMsg[5] = 90;          // angle 90 degree
+        actionMsg[6] = 0x00;
+
+        actionMsg[7] = 10;          // dist 10cm
+
+        actionMsg[8] = 20;          // speed 20mm/s
+        actionMsg[9] = 0x00;
+
+        sendMessage (actionMsg);
+    }
 
     Wait (5000);
 }

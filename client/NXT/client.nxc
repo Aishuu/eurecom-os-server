@@ -1,5 +1,5 @@
 #define CONNECTION  1
-#define SERV_NAME   "aishuu-laptop"
+#define SERV_NAME   "eurecom-os-server"             // The name of the server
 
 #define MSG_ACTION  0
 #define MSG_ACK     1
@@ -55,8 +55,8 @@ task main() {
         Wait (100);
 
     NumOut(0, LCD_LINE3, msg[4]);
-    byte previous = 0;
-    byte next = 0;
+    byte previous = 0xFF;
+    byte next = 0xFF;
     byte rank = 0;
     byte length = 0;
 

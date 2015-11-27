@@ -12,4 +12,4 @@ all:
 install: $(MAKEFILE)
 	scp $(SOURCES) root@$(EV3_ADDR):$(EV3_DIR)
 	scp $(MAKEFILE) root@$(EV3_ADDR):$(EV3_DIR)/Makefile
-	ssh root@$(EV3_ADDR) 'cd $(EV3_DIR) && make && make install'
+	ssh root@$(EV3_ADDR) 'cd $(EV3_DIR) && make ultraclean && make install'

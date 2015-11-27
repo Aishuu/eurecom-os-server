@@ -15,7 +15,7 @@
 #define MAXNAMESIZE         31
 #define MAXTEAM             5
 
-#define CONNECT_DELAY       5
+#define CONNECT_DELAY       15
 
 #define RBT_MISS            0
 #define RBT_NXT             1
@@ -41,8 +41,6 @@
 #define KCYN  "\x1B[36m"
 #define KWHT  "\x1B[37m"
 #define RESET "\033[0m"
-
-#undef DEBUG
 
 const char * const playerColors [] = {
     KGRN,
@@ -106,17 +104,16 @@ void replyToNXT (struct team *t, char mailbox) {
         buf[4] = 0x00;      // Everything is OK
         buf[5] = mailbox;
         unsigned int msgSize = t->mailbox->msgSize[t->mailbox->nextMessage];
-        if (t->mailbox->mailbox[t->mailbox->nextMessage][msgSize-1] != '\0')
-            // Message must include the terminating null byte
-            msgSize ++;
 
-        buf[6] = (char) (msgSize & 0xFF);
-        memcpy (buf+7, t->mailbox->mailbox[t->mailbox->nextMessage], t->mailbox->msgSize[t->mailbox->nextMessage]);
+        // Message must include the terminating null byte
+        buf[6] = (char) ((msgSize+1) & 0xFF);
+
+        memcpy (buf+7, t->mailbox->mailbox[t->mailbox->nextMessage], msgSize);
 
 #ifdef DEBUG
-        printf ("[DEBUG] Serving message of size %d '", t->mailbox->msgSize[t->mailbox->nextMessage]);
+        printf ("[DEBUG] Serving message of size %d '", msgSize);
         int i;
-        for (i=7; i<7+t->mailbox->msgSize[t->mailbox->nextMessage]; i++) {
+        for (i=7; i<7+msgSize; i++) {
             printf ("%02X", (unsigned char) buf[i]);
             if ((i-7) % 4 == 3)
                 printf (" ");
@@ -138,13 +135,10 @@ int read_from_client (struct team *t, char *buffer, int maxSize) {
         unsigned char nxtBuf[2] = {0};
         read (t->sock, nxtBuf, 2);
         unsigned int s = (nxtBuf[1] << 8) | nxtBuf[0];
-#ifdef DEBUG
-        printf ("[DEBUG] : NXT first 2 bytes: %02X %02X (%d)\n", nxtBuf[0], nxtBuf[1], s);
-#endif
-        maxSize = s+1 < maxSize ? s+1 : maxSize;
+        maxSize = s < maxSize ? s : maxSize;
     }
 
-    nbytes = read (t->sock, buffer, maxSize-1);
+    nbytes = read (t->sock, buffer, maxSize);
     if (nbytes <= 0)
         // Read error or End-of-file
         return -1;
@@ -163,13 +157,12 @@ int read_from_client (struct team *t, char *buffer, int maxSize) {
 #endif
 
 
-    if (t->robotType == RBT_NXT && maxSize >= 6 && buffer[0] == 0x00 && buffer[1] == 0x13) {
+    if (t->robotType == RBT_NXT && maxSize >= 5 && buffer[0] == 0x00 && buffer[1] == 0x13) {
         // Got a MESSAGEREAD command
         replyToNXT (t, buffer[3]);
         return 0;
     }
 
-    buffer[nbytes] = '\0';
     return nbytes;
 }
 
@@ -281,7 +274,7 @@ void debug (const char *color, const char *fmt, ...) {
 
 void parseMessage (struct team *teams, int nbTeams, int sendingTeam, const unsigned char *buf, int nbbytes) {
     debug (KNRM, "[");
-    debug (COL(sendingTeam), "%s", teams[sendingTeam].name);
+    debug (COL(sendingTeam),"%" STR(MAXNAMESIZE) "s", teams[sendingTeam].name);
     debug (KNRM, "] ");
 
     if (nbbytes < 5) {
@@ -328,7 +321,7 @@ void parseMessage (struct team *teams, int nbTeams, int sendingTeam, const unsig
 
             debug (KNRM, "id=%d dest=", id);
             debug (COL(buf[3]), "%s\n", teams[buf[3]].name);
-            debug (KNRM, "    ACTION   angle=%d dist=%d speed=%d\n", angle, buf[7], speed);
+            debug (KNRM, "         ACTION   angle=%d dist=%d speed=%d\n", angle, buf[7], speed);
 
             write_to_client (&teams[buf[3]], (char *) buf, 10);
 
@@ -351,7 +344,7 @@ void parseMessage (struct team *teams, int nbTeams, int sendingTeam, const unsig
 
             debug (KNRM, "id=%d dest=", id);
             debug (COL(buf[3]), "%s\n", teams[buf[3]].name);
-            debug (KNRM, "    ACK      idAck=%d status=%d\n", idAck, buf[7]);
+            debug (KNRM, "          ACK      idAck=%d status=%d\n", idAck, buf[7]);
 
             write_to_client (&teams[buf[3]], (char *) buf, 8);
 
@@ -367,7 +360,7 @@ void parseMessage (struct team *teams, int nbTeams, int sendingTeam, const unsig
 
             debug (KNRM, "id=%d dest=", id);
             debug (COL(buf[3]), "%s\n", teams[buf[3]].name);
-            debug (KNRM, "    LEAD\n");
+            debug (KNRM, "          LEAD\n");
 
             write_to_client (&teams[buf[3]], (char *) buf, 5);
 
@@ -396,7 +389,7 @@ void parseMessage (struct team *teams, int nbTeams, int sendingTeam, const unsig
 
             debug (KNRM, "id=%d dest=", id);
             debug (COL(buf[3]), "%s\n", teams[buf[3]].name);
-            debug (KNRM, "    WAIT     seconds=%d\n", buf[5]);
+            debug (KNRM, "          WAIT     seconds=%d\n", buf[5]);
 
             write_to_client (&teams[buf[3]], (char *) buf, 6);
 
@@ -412,7 +405,7 @@ void parseMessage (struct team *teams, int nbTeams, int sendingTeam, const unsig
 
             debug (KNRM, "id=%d dest=", id);
             debug (COL(buf[3]), "%s\n", teams[buf[3]].name);
-            debug (KNRM, "    CUSTOM   content=");
+            debug (KNRM, "          CUSTOM   content=");
             int i;
             for (i=5; i<nbbytes; i++) {
                 debug (KNRM, "%02X", (unsigned char) buf[i]);
@@ -437,7 +430,7 @@ int main (int argc, char **argv) {
     socklen_t opt = sizeof(rem_addr);
     fd_set read_fd_set;
 
-    char buf[MAXMSG] = { 0 };
+    char buf[MAXMSG+1] = { 0 };
 
     struct team teams [MAXTEAM];
     memset(teams, 0, MAXTEAM * sizeof(struct team));

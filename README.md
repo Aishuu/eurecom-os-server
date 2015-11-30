@@ -8,7 +8,7 @@ It is first intended to be used in the OS course of EURECOM but part or whole of
 
 ### For EV3
 
-Download the kernel image `eurecom-ev3dev.img.xz`. Follow the steps from [http://www.ev3dev.org/docs/getting-started/](http://www.ev3dev.org/docs/getting-started/) with the provided kernel image. Root account was given the password "eurecom".
+Follow the steps from [http://www.ev3dev.org/docs/getting-started/](http://www.ev3dev.org/docs/getting-started/) to download the ev3dev kernel image and flash it on the SD card.
 
 If you do not have blueman, set it up as described: [http://www.ev3dev.org/docs/tutorials/connecting-to-the-internet-via-bluetooth/](http://www.ev3dev.org/docs/tutorials/connecting-to-the-internet-via-bluetooth/).
 
@@ -55,6 +55,9 @@ you insist a bit. Then run your client program (as provided as example).
 
 
 ### For the server
+
+You can compile the server using the provided Makefile. If you run into an error stating that `bluetooth/bluetooth.h` was not found,
+you will need to install the `libbluetooth-dev` package (on Debian-like UNIX).
 
 Run the server with an appropriate team file. Each line of the team file should be formatted as:
 ```
